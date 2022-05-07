@@ -1,9 +1,15 @@
+from __future__ import annotations
 from argparse import ArgumentParser, FileType
 from enum import Enum, auto, unique
 import networkx as nx
 from networkx.algorithms import components
 import os.path
+from sys import version_info
 from typing import BinaryIO, Iterator, TextIO
+import warnings
+
+if version_info.major != 3 or version_info.minor < 8:
+    warnings.warn('python 3.8 required for positiona-only arguments')
 
 
 def iter_csv(file: TextIO, /, *, sep: str = ',') -> Iterator[tuple[str, ...]]:
@@ -82,12 +88,14 @@ class OutputMode(Enum):
 
 if __name__ == '__main__':
     parser = ArgumentParser('scc.py')
-    parser.add_argument('-n', '--nodes', type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
+    parser.add_argument('-n', '--nodes', metavar='PATH',
+        type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
         help=f'Path for the \'node.csv\' file. (default: {DEFAULT_NODES})')
-    parser.add_argument('-l', '--links', type=FileType(mode='r', encoding='utf8'), default=DEFAULT_LINKS,
+    parser.add_argument('-l', '--links', metavar='PATH',
+        type=FileType(mode='r', encoding='utf8'), default=DEFAULT_LINKS,
         help=f'Path for the \'links.csv\' file. (default: {DEFAULT_LINKS})')
-    parser.add_argument('-d', '--draw', type=FileType(mode='wb'),
-        nargs='?', default=OutputMode.NO_OUTPUT, const=OutputMode.SHOW_OUTPUT,
+    parser.add_argument('-d', '--draw', metavar='OUTPUT', nargs='?',
+        type=FileType(mode='wb'), default=OutputMode.NO_OUTPUT, const=OutputMode.SHOW_OUTPUT,
         help='Draw NetworkX graph using Matplotlib.')
     args = parser.parse_intermixed_args()
 
