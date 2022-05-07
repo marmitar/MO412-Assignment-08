@@ -17,7 +17,7 @@ def iter_csv(file: TextIO, /, *, sep: str = ',') -> Iterator[tuple[str, ...]]:
             yield fields
 
 
-def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False):
+def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False) -> nx.DiGraph:
     """Read nodes and links from the provided files."""
     graph = nx.DiGraph()
 
@@ -27,7 +27,7 @@ def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False):
     for id_tail, id_head in iter_csv(links):
         graph.add_edge(id_tail, id_head)
 
-    return graph
+    return nx.freeze(graph)
 
 
 NAMING_METHODS = {
@@ -121,7 +121,7 @@ def node_colors(graph: nx.Graph, /):
 
     component: dict[str, str] = nx.get_node_attributes(graph, 'component')
 
-    colorlist: list[str] = rcParams['axes.prop_cycle'].by_key()['color']
+    colorlist = [str(c) for c in rcParams['axes.prop_cycle'].by_key()['color']]
     colors = {name: colorlist.pop(0) for name in set(component.values())}
 
     return tuple(colors[component[node]] for node in graph)
@@ -168,6 +168,8 @@ if __name__ == '__main__':
     from argparse import ArgumentParser, FileType
 
     parser = ArgumentParser('scc.py')
+    parser.add_argument('output', nargs='?', type=FileType(mode='wb'), default=None,
+        help='GEXF file to be generated with the graph contents.')
     # naming
     parser.add_argument('-num', '--number', default=False, action='store_true',
         help='Add number to node label.')
@@ -190,10 +192,16 @@ if __name__ == '__main__':
         help='Method for positioning nodes when draing.')
     args = parser.parse_intermixed_args()
 
+    # reading input
     graph = read_graph(nodes=args.nodes, links=args.links, number=args.number)
+    # finding components
     for component, nodes in strongly_connected_components(graph, naming=args.naming).items():
         print(f'{component}:', nodes)
+    # writing GEXF
+    if args.output is not None:
+        nx.write_gexf(graph, args.output)
 
+    # rendering with matplolib
     if args.draw is SHOW_OUTPUT:
         draw_graph(graph, layout=args.layout)
     elif args.draw is not NO_OUTPUT:
