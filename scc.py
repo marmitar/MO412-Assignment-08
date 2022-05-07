@@ -17,12 +17,12 @@ def iter_csv(file: TextIO, /, *, sep: str = ',') -> Iterator[tuple[str, ...]]:
             yield fields
 
 
-def read_graph(*, nodes: TextIO, links: TextIO):
+def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False):
     """Read nodes and links from the provided files."""
     graph = nx.DiGraph()
 
     for name, ident in iter_csv(nodes):
-        graph.add_node(ident, label=name)
+        graph.add_node(ident, label=f'{name} ({ident})' if number else name)
 
     for id_tail, id_head in iter_csv(links):
         graph.add_edge(id_tail, id_head)
@@ -102,7 +102,7 @@ def draw_graph(graph: nx.DiGraph, /, output: BinaryIO | None = None, *, layout: 
     position = node_layout(graph, method=layout)
     labels = nx.get_node_attributes(graph, 'label')
     colors = node_colors(graph)
-    nx.draw(graph, pos=position, labels=labels, node_color=colors, node_size=1000)
+    nx.draw(graph, pos=position, labels=labels, node_color=colors, node_size=1000, font_size=10)
 
     if output is None:
         plt.show(block=True)
@@ -136,21 +136,26 @@ if __name__ == '__main__':
     from argparse import ArgumentParser, FileType
 
     parser = ArgumentParser('scc.py')
-    parser.add_argument('-n', '--nodes', metavar='PATH',
+    # naming
+    parser.add_argument('-n', '--number', default=False, action='store_true',
+        help='Add number to node label.')
+    # input file
+    parser.add_argument('--nodes', metavar='PATH',
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
         help=f'Path for the \'node.csv\' file. (default: {DEFAULT_NODES})')
-    parser.add_argument('-l', '--links', metavar='PATH',
+    parser.add_argument('--links', metavar='PATH',
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_LINKS,
         help=f'Path for the \'links.csv\' file. (default: {DEFAULT_LINKS})')
+    # drawing
     parser.add_argument('-d', '--draw', metavar='OUTPUT', nargs='?',
         type=FileType(mode='wb'), default=NO_OUTPUT, const=SHOW_OUTPUT,
         help=('Draw NetworkX graph to OUTPUT using Matplotlib. If no argument is provided,'
             ' the graph is drawn on a new window.'))
-    parser.add_argument('--layout', choices=[name for name, _ in LAYOUT_METHODS], default=None,
+    parser.add_argument('-l', '--layout', choices=[name for name, _ in LAYOUT_METHODS], default=None,
         help='Method for positioning nodes when draing.')
     args = parser.parse_intermixed_args()
 
-    graph = read_graph(nodes=args.nodes, links=args.links)
+    graph = read_graph(nodes=args.nodes, links=args.links, number=args.number)
     print(strongly_connected_components(graph))
 
     if args.draw is SHOW_OUTPUT:
