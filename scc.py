@@ -51,7 +51,7 @@ def component_name(graph: nx.DiGraph, num: int, /, *, nodes: Iterable[str], meth
     method = NAMING_METHODS[method]
 
     if method == 'string':
-        return str(num)
+        return f'C{num}'
     elif method == 'initials':
         return ''.join(graph.nodes[s]['label'][0] for s in nodes)
     else:
@@ -196,10 +196,10 @@ if __name__ == '__main__':
     graph = read_graph(nodes=args.nodes, links=args.links, number=args.number)
     # finding components
     for component, nodes in strongly_connected_components(graph, naming=args.naming).items():
-        print(f'{component}:', nodes)
+        print(f'{component}:', {graph.nodes[n]['label'] for n in nodes})
     # writing GEXF
     if args.output is not None:
-        nx.write_gexf(graph, args.output)
+        nx.write_gexf(graph, args.output, prettyprint=True)
 
     # rendering with matplolib
     if args.draw is SHOW_OUTPUT:
