@@ -8,4 +8,6 @@ You then have to pass the graph `G` and its strongly connected components from P
 
 Then load the graph in Gephi, label the nodes with their names (not numbers), color the strongly connected components with different colors, export the drawing in png format, and submit it here as well.
 
-<!-- ## [Turn in](assignment.pdf) -->
+## Turn in
+
+![Final Graph](graph.png)
