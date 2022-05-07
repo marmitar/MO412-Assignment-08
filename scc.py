@@ -1,15 +1,9 @@
+# Python 3.8+ required
 from __future__ import annotations
-from argparse import ArgumentParser, FileType
-from enum import Enum, auto, unique
 import networkx as nx
 from networkx.algorithms import components
 import os.path
-from sys import version_info
 from typing import BinaryIO, Iterator, TextIO
-import warnings
-
-if version_info.major != 3 or version_info.minor < 8:
-    warnings.warn('python 3.8 required for positiona-only arguments')
 
 
 def iter_csv(file: TextIO, /, *, sep: str = ',') -> Iterator[tuple[str, ...]]:
@@ -71,22 +65,31 @@ def draw_graph(graph: nx.DiGraph, /, output: BinaryIO | None = None, *, draw_com
         plt.savefig(output)
 
 
-try:
-    DEFAULT_NODES = os.path.join(os.path.dirname(__file__), 'nodes.csv')
-    DEFAULT_LINKS = os.path.join(os.path.dirname(__file__), 'links.csv')
-except NameError:
-    DEFAULT_NODES = 'nodes.csv'
-    DEFAULT_LINKS = 'links.csv'
+def path_to(filename: str):
+    """Relative path to `filename` from current 'scc.py' file."""
+    try:
+        program = __file__
+    # some environemnts (like bpython) don't define '__file__',
+    # so we assume that the file is in the current directory
+    except NameError:
+        return filename
+
+    basedir = os.path.dirname(program)
+    fullpath = os.path.join(basedir, filename)
+    return os.path.relpath(fullpath)
 
 
-@unique
-class OutputMode(Enum):
-    """Special output modes where no file is generated."""
-    NO_OUTPUT = auto()
-    SHOW_OUTPUT = auto()
+# Default input files
+DEFAULT_NODES = path_to('nodes.csv')
+DEFAULT_LINKS = path_to('links.csv')
+# Special output modes where no file is generated
+NO_OUTPUT = object()
+SHOW_OUTPUT = object()
 
 
 if __name__ == '__main__':
+    from argparse import ArgumentParser, FileType
+
     parser = ArgumentParser('scc.py')
     parser.add_argument('-n', '--nodes', metavar='PATH',
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
@@ -95,14 +98,15 @@ if __name__ == '__main__':
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_LINKS,
         help=f'Path for the \'links.csv\' file. (default: {DEFAULT_LINKS})')
     parser.add_argument('-d', '--draw', metavar='OUTPUT', nargs='?',
-        type=FileType(mode='wb'), default=OutputMode.NO_OUTPUT, const=OutputMode.SHOW_OUTPUT,
-        help='Draw NetworkX graph using Matplotlib.')
+        type=FileType(mode='wb'), default=NO_OUTPUT, const=SHOW_OUTPUT,
+        help=('Draw NetworkX graph to OUTPUT using Matplotlib. If no argument is provided,'
+            ' the graph is drawn on a new window.'))
     args = parser.parse_intermixed_args()
 
     graph = read_graph(nodes=args.nodes, links=args.links)
     graph = add_components(graph)
 
-    if args.draw is OutputMode.SHOW_OUTPUT:
+    if args.draw is SHOW_OUTPUT:
         draw_graph(graph)
-    elif args.draw is not OutputMode.NO_OUTPUT:
+    elif args.draw is not NO_OUTPUT:
         draw_graph(graph, output=args.draw)
