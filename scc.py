@@ -1,9 +1,11 @@
 # Python 3.8+ required
 from __future__ import annotations
+from itertools import pairwise
 import networkx as nx
 from networkx.algorithms import components
 import os.path
-from typing import BinaryIO, Iterator, TextIO
+from typing import Any, BinaryIO, Callable, Iterator, TextIO
+import warnings
 
 
 def iter_csv(file: TextIO, /, *, sep: str = ',') -> Iterator[tuple[str, ...]]:
@@ -28,18 +30,59 @@ def read_graph(*, nodes: TextIO, links: TextIO):
     return graph
 
 
-def strongly_connected_components(graph: nx.DiGraph, /) -> Iterator[set[str]]:
-    """Static typing for the SCC algorithm on NetworkX."""
-    return components.strongly_connected_components(graph)
+def strongly_connected_components(graph: nx.DiGraph, /):
+    """Get components from attributes or using NetworkX's algorithm."""
+    output: dict[int, set[str]] = {}
+
+    # extract from attributes, if present
+    if (node_component := nx.get_node_attributes(graph, 'component')):
+        for node, comp_id in node_component.items():
+            comp = output.get(comp_id, set())
+            comp.add(node)
+            output[comp_id] = comp
+    # or calculate components and store in attributes
+    else:
+        for comp_id, comp_nodes in enumerate(components.strongly_connected_components(graph)):
+            comp = {node: comp_id for node in comp_nodes}
+            nx.set_node_attributes(graph, comp, 'component')
+            output[comp_id] = comp_nodes
+
+    return output
 
 
-def add_components(graph: nx.DiGraph, /):
-    """Identify each strongly connected component on a digraph."""
-    for comp_id, comp_nodes in enumerate(strongly_connected_components(graph)):
-        comp = {node: comp_id for node in comp_nodes}
-        nx.set_node_attributes(graph, comp, 'component')
+# default node layout methods
+LAYOUT_METHODS: list[tuple[str, Callable[[nx.DiGraph], dict[str, Any]]]] = [
+    ('graphviz', lambda graph: nx.nx_agraph.graphviz_layout(graph, prog='dot')),
+    ('kamada_kawai', lambda graph: nx.kamada_kawai_layout(graph)),
+    ('spectral', lambda graph: nx.spectral_layout(graph)),
+]
 
-    return graph
+def node_layout(graph: nx.DiGraph, /, *, method: str | None = None):
+    """Tries to use some advanced methods for node position on drawings."""
+
+    # uses given method
+    if method is not None:
+        for cur_mehtod, layout in LAYOUT_METHODS:
+            if cur_mehtod == method:
+                return layout(graph)
+        raise ValueError(f"no method named '{method}'")
+
+    # or try every method
+    methods = [(f"'{name}'", layout) for name, layout in LAYOUT_METHODS]
+    # append a final one for pairwise to work
+    methods.append(('no method', lambda _: {}))
+
+    for (cur_method, layout), (next_method, _) in pairwise(methods):
+        try:
+            return layout(graph)
+        except ImportError as error:
+            warnings.warn('\n'
+                f'Could not use {cur_method} for layout.\n'
+                f'Reason: {error}.\n'
+                f'Falling back to {next_method}.'
+            )
+    # no method matched or working
+    return None
 
 
 def node_colors(graph: nx.Graph, /):
@@ -52,12 +95,14 @@ def node_colors(graph: nx.Graph, /):
     return tuple(colors[component[node]] for node in graph)
 
 
-def draw_graph(graph: nx.DiGraph, /, output: BinaryIO | None = None, *, draw_components: bool = True):
+def draw_graph(graph: nx.DiGraph, /, output: BinaryIO | None = None, *, layout: str | None = None):
     """Draw graph and its components using Matplotlib."""
     from matplotlib import pyplot as plt
 
-    colors = node_colors(graph) if draw_components else None
-    nx.draw_kamada_kawai(graph, node_color=colors, node_size=1000, labels=nx.get_node_attributes(graph, 'label'))
+    position = node_layout(graph, method=layout)
+    labels = nx.get_node_attributes(graph, 'label')
+    colors = node_colors(graph)
+    nx.draw(graph, pos=position, labels=labels, node_color=colors, node_size=1000)
 
     if output is None:
         plt.show(block=True)
@@ -101,12 +146,14 @@ if __name__ == '__main__':
         type=FileType(mode='wb'), default=NO_OUTPUT, const=SHOW_OUTPUT,
         help=('Draw NetworkX graph to OUTPUT using Matplotlib. If no argument is provided,'
             ' the graph is drawn on a new window.'))
+    parser.add_argument('--layout', choices=[name for name, _ in LAYOUT_METHODS], default=None,
+        help='Method for positioning nodes when draing.')
     args = parser.parse_intermixed_args()
 
     graph = read_graph(nodes=args.nodes, links=args.links)
-    graph = add_components(graph)
+    print(strongly_connected_components(graph))
 
     if args.draw is SHOW_OUTPUT:
-        draw_graph(graph)
+        draw_graph(graph, layout=args.layout)
     elif args.draw is not NO_OUTPUT:
-        draw_graph(graph, output=args.draw)
+        draw_graph(graph, output=args.draw, layout=args.layout)
