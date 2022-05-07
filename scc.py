@@ -1,6 +1,7 @@
+"""Generate GEXF file from 'nodes.csv' and 'links.csv' with computed Components."""
+
 # Python 3.8+ required
 from __future__ import annotations
-from itertools import pairwise
 import networkx as nx
 from networkx.algorithms import components
 import os.path
@@ -102,7 +103,7 @@ def node_layout(graph: nx.DiGraph, /, *, method: str | None = None):
     # append a final one for pairwise to work
     methods.append(('no method', lambda _: {}))
 
-    for (cur_method, layout), (next_method, _) in pairwise(methods):
+    for (cur_method, layout), (next_method, _) in zip(methods[:-1], methods[1:]):
         try:
             return layout(graph)
         except ImportError as error:
