@@ -4,7 +4,7 @@ from itertools import pairwise
 import networkx as nx
 from networkx.algorithms import components
 import os.path
-from typing import Any, BinaryIO, Callable, Iterator, TextIO
+from typing import Any, BinaryIO, Callable, Iterable, Iterator, TextIO
 import warnings
 
 
@@ -30,22 +30,52 @@ def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False):
     return graph
 
 
-def strongly_connected_components(graph: nx.DiGraph, /):
+NAMING_METHODS = {
+    'string': 'string',
+    'str': 'string',
+    's': 'string',
+    'initials': 'initials',
+    'init': 'initials',
+    'ini': 'initials',
+    'i': 'initials',
+    'cardinal': 'cardinal',
+    'card': 'cardinal',
+    'c': 'cardinal',
+    'ordinal': 'ordinal',
+    'ord': 'ordinal',
+    'o': 'ordinal',
+}
+
+def component_name(graph: nx.DiGraph, num: int, /, *, nodes: Iterable[str], method: str) -> str:
+    """Name a component from its index or nodes."""
+    method = NAMING_METHODS[method]
+
+    if method == 'string':
+        return str(num)
+    elif method == 'initials':
+        return ''.join(graph.nodes[s]['label'][0] for s in nodes)
+    else:
+        from num2words import num2words
+        return num2words(num + 1, to=method)
+
+
+def strongly_connected_components(graph: nx.DiGraph, /, *, naming: str):
     """Get components from attributes or using NetworkX's algorithm."""
-    output: dict[int, set[str]] = {}
+    output: dict[str, set[str]] = {}
 
     # extract from attributes, if present
     if (node_component := nx.get_node_attributes(graph, 'component')):
-        for node, comp_id in node_component.items():
-            comp = output.get(comp_id, set())
+        for node, comp_name in node_component.items():
+            comp = output.get(comp_name, set())
             comp.add(node)
-            output[comp_id] = comp
+            output[comp_name] = comp
     # or calculate components and store in attributes
     else:
         for comp_id, comp_nodes in enumerate(components.strongly_connected_components(graph)):
-            comp = {node: comp_id for node in comp_nodes}
+            comp_name = component_name(graph, comp_id, nodes=comp_nodes, method=naming)
+            comp = {node: comp_name for node in comp_nodes}
             nx.set_node_attributes(graph, comp, 'component')
-            output[comp_id] = comp_nodes
+            output[comp_name] = comp_nodes
 
     return output
 
@@ -89,8 +119,10 @@ def node_colors(graph: nx.Graph, /):
     """List the color of each node on `graph` according to its component."""
     from matplotlib import rcParams
 
-    colors: list[str] = rcParams['axes.prop_cycle'].by_key()['color']
-    component: dict[str, int] = nx.get_node_attributes(graph, 'component')
+    component: dict[str, str] = nx.get_node_attributes(graph, 'component')
+
+    colorlist: list[str] = rcParams['axes.prop_cycle'].by_key()['color']
+    colors = {name: colorlist.pop(0) for name in set(component.values())}
 
     return tuple(colors[component[node]] for node in graph)
 
@@ -137,8 +169,11 @@ if __name__ == '__main__':
 
     parser = ArgumentParser('scc.py')
     # naming
-    parser.add_argument('-n', '--number', default=False, action='store_true',
+    parser.add_argument('-num', '--number', default=False, action='store_true',
         help='Add number to node label.')
+    parser.add_argument('-n', '--naming', choices=NAMING_METHODS.keys(), default='string',
+        metavar='{' + ','.join(set(NAMING_METHODS.values())) + '}',
+        help='Method for naming each component according to its index. (default: string)')
     # input file
     parser.add_argument('--nodes', metavar='PATH',
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
@@ -156,7 +191,8 @@ if __name__ == '__main__':
     args = parser.parse_intermixed_args()
 
     graph = read_graph(nodes=args.nodes, links=args.links, number=args.number)
-    print(strongly_connected_components(graph))
+    for component, nodes in strongly_connected_components(graph, naming=args.naming).items():
+        print(f'{component}:', nodes)
 
     if args.draw is SHOW_OUTPUT:
         draw_graph(graph, layout=args.layout)
