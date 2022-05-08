@@ -1,9 +1,8 @@
 """Generate GEXF file from 'nodes.csv' and 'links.csv' with computed Components."""
 
-# Python 3.8+ required
-from __future__ import annotations
+# Python 3.10+ required
+from enum import Enum, auto, unique
 import networkx as nx
-from networkx.algorithms import components
 import os.path
 from typing import Any, BinaryIO, Callable, Iterable, Iterator, TextIO
 import warnings
@@ -32,32 +31,28 @@ def read_graph(*, nodes: TextIO, links: TextIO, number: bool = False) -> nx.DiGr
 
 
 NAMING_METHODS = {
-    'string': 'string',
-    'str': 'string',
-    's': 'string',
-    'initials': 'initials',
-    'init': 'initials',
-    'ini': 'initials',
-    'i': 'initials',
-    'cardinal': 'cardinal',
-    'card': 'cardinal',
-    'c': 'cardinal',
-    'ordinal': 'ordinal',
-    'ord': 'ordinal',
-    'o': 'ordinal',
+    substr: option
+    for option, substrs in {
+        'string': {'str', 's'},
+        'initials': {'init', 'ini', 'i'},
+        'cardinal': {'card', 'c'},
+        'ordinal': {'ord', 'o'},
+    }.items()
+    for substr in {option} | substrs
 }
 
 def component_name(graph: nx.DiGraph, num: int, /, *, nodes: Iterable[str], method: str) -> str:
     """Name a component from its index or nodes."""
-    method = NAMING_METHODS[method]
-
-    if method == 'string':
-        return f'C{num}'
-    elif method == 'initials':
-        return ''.join(graph.nodes[s]['label'][0] for s in nodes)
-    else:
-        from num2words import num2words
-        return num2words(num + 1, to=method)
+    match NAMING_METHODS.get(method):
+        case 'string':
+            return f'C{num}'
+        case 'initials':
+            return ''.join(graph.nodes[s]['label'][0] for s in nodes)
+        case 'cardinal' | 'ordinal' as word:
+            from num2words import num2words
+            return num2words(num + 1, to=word)
+        case _:
+            raise ValueError(f'no method named {method}')
 
 
 def strongly_connected_components(graph: nx.DiGraph, /, *, naming: str):
@@ -72,7 +67,8 @@ def strongly_connected_components(graph: nx.DiGraph, /, *, naming: str):
             output[comp_name] = comp
     # or calculate components and store in attributes
     else:
-        for comp_id, comp_nodes in enumerate(components.strongly_connected_components(graph)):
+        components: Iterator[set[str]] = nx.algorithms.strongly_connected_components(graph)
+        for comp_id, comp_nodes in enumerate(components):
             comp_name = component_name(graph, comp_id, nodes=comp_nodes, method=naming)
             comp = {node: comp_name for node in comp_nodes}
             nx.set_node_attributes(graph, comp, 'component')
@@ -160,23 +156,47 @@ def path_to(filename: str):
 # Default input files
 DEFAULT_NODES = path_to('nodes.csv')
 DEFAULT_LINKS = path_to('links.csv')
-# Special output modes where no file is generated
-NO_OUTPUT = object()
-SHOW_OUTPUT = object()
+
+
+@unique
+class OutputMode(Enum):
+    NO_OUTPUT = auto()
+    SHOW_OUTPUT = auto()
+
+class Arguments:
+    output: BinaryIO | None = None
+    number: bool = False
+    naming: str = 'string'
+    nodes: TextIO
+    links: TextIO
+    draw: BinaryIO | OutputMode
+    layout: str | None = None
+
+    @staticmethod
+    def naming_methods(*, hide_repeateds: bool = False):
+        if hide_repeateds:
+            return set(NAMING_METHODS.values())
+        else:
+            return set(NAMING_METHODS.keys())
+
+    @staticmethod
+    def layout_methods():
+        return {name for name, _ in LAYOUT_METHODS}
 
 
 if __name__ == '__main__':
     from argparse import ArgumentParser, FileType
 
     parser = ArgumentParser('scc.py')
-    parser.add_argument('output', nargs='?', type=FileType(mode='wb'), default=None,
+    parser.add_argument('output', nargs='?',
+        type=FileType(mode='wb'), default=Arguments.output,
         help='GEXF file to be generated with the graph contents.')
     # naming
     parser.add_argument('-num', '--number', default=False, action='store_true',
         help='Add number to node label.')
-    parser.add_argument('-n', '--naming', choices=NAMING_METHODS.keys(), default='string',
-        metavar='{' + ','.join(set(NAMING_METHODS.values())) + '}',
-        help='Method for naming each component according to its index. (default: string)')
+    parser.add_argument('-n', '--naming', choices=Arguments.naming_methods(), default=Arguments.naming,
+        metavar='{' + ','.join(Arguments.naming_methods(hide_repeateds=True)) + '}',
+        help=f'Method for naming each component according to its index. (default: {Arguments.naming})')
     # input file
     parser.add_argument('--nodes', metavar='PATH',
         type=FileType(mode='r', encoding='utf8'), default=DEFAULT_NODES,
@@ -186,12 +206,12 @@ if __name__ == '__main__':
         help=f'Path for the \'links.csv\' file. (default: {DEFAULT_LINKS})')
     # drawing
     parser.add_argument('-d', '--draw', metavar='OUTPUT', nargs='?',
-        type=FileType(mode='wb'), default=NO_OUTPUT, const=SHOW_OUTPUT,
+        type=FileType(mode='wb'), default=OutputMode.NO_OUTPUT, const=OutputMode.SHOW_OUTPUT,
         help=('Draw NetworkX graph to OUTPUT using Matplotlib. If no argument is provided,'
             ' the graph is drawn on a new window.'))
-    parser.add_argument('-l', '--layout', choices=[name for name, _ in LAYOUT_METHODS], default=None,
+    parser.add_argument('-l', '--layout', choices=Arguments.layout_methods(), default=Arguments.layout,
         help='Method for positioning nodes when draing.')
-    args = parser.parse_intermixed_args()
+    args = parser.parse_args(namespace=Arguments)
 
     # reading input
     graph = read_graph(nodes=args.nodes, links=args.links, number=args.number)
@@ -203,7 +223,10 @@ if __name__ == '__main__':
         nx.write_gexf(graph, args.output, prettyprint=True)
 
     # rendering with matplolib
-    if args.draw is SHOW_OUTPUT:
-        draw_graph(graph, layout=args.layout)
-    elif args.draw is not NO_OUTPUT:
-        draw_graph(graph, output=args.draw, layout=args.layout)
+    match args.draw:
+        case OutputMode.NO_OUTPUT:
+            pass
+        case OutputMode.SHOW_OUTPUT:
+            draw_graph(graph, layout=args.layout)
+        case output_file:
+            draw_graph(graph, layout=args.layout, output=output_file)
