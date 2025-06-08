@@ -1,4 +1,6 @@
-# Assignment 8 - Strongly Connected Components
+# Networks Sciences (MO412 / MC908) - Assignment 8
+
+## Strongly Connected Components
 
 Consider the directed graph `G` given by its nodes and links in files nodes.csv and links.csv, respectively.  For this assignment, you will use networkx to compute the strongly connected components of `G`, and then visualize them with Gephi.
 
